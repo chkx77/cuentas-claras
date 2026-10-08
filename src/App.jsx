@@ -1,14 +1,16 @@
 import React, { useState, useEffect } from 'react';
+import { usePayments } from './hooks/usePayments';
+import { normalizePayment, parseBackup, backupText, STORAGE_KEY } from './lib/payments';
 import { Calendar, DollarSign, FileText, Bell, Plus, Trash2, Edit3, Check, X, AlertCircle, Menu, Filter, Download, Upload, RefreshCw } from 'lucide-react';
 
 const SistemaPagosArgentina = () => {
-  const [pagos, setPagos] = useState([]);
+  const { pagos, setPagos, estadoGuardado, storageError, blocked, restore } = usePayments();
   const [mostrarFormulario, setMostrarFormulario] = useState(false);
   const [editandoPago, setEditandoPago] = useState(null);
   const [filtroEstado, setFiltroEstado] = useState('todos');
   const [mostrarFiltros, setMostrarFiltros] = useState(false);
   const [mostrarSplash, setMostrarSplash] = useState(true);
-  const [estadoGuardado, setEstadoGuardado] = useState('guardando');
+
 
   // Categorías de servicios argentinos
   const categorias = [
@@ -34,115 +36,15 @@ const SistemaPagosArgentina = () => {
     notas: ''
   });
 
-  // Funciones de persistencia automática simple
-  const STORAGE_KEY = 'pagos-argentina-data';
-  const BACKUP_KEY = 'pagos-argentina-backup';
-
-  const guardarDatos = (nuevosPagos) => {
-    try {
-      setEstadoGuardado('guardando');
-      const datosParaGuardar = {
-        pagos: nuevosPagos,
-        version: '1.1',
-        fechaActualizacion: new Date().toISOString(),
-        totalRegistros: nuevosPagos.length
-      };
-      
-      // Guardar datos principales
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(datosParaGuardar));
-      
-      // Crear hasta 3 backups rotativos para mayor seguridad
-      const backupData = {
-        ...datosParaGuardar,
-        esBackup: true,
-        fechaBackup: new Date().toISOString()
-      };
-      
-      // Sistema de backups rotativos
-      const backup2 = localStorage.getItem(BACKUP_KEY);
-      const backup3 = localStorage.getItem(BACKUP_KEY + '_2');
-      
-      if (backup2) localStorage.setItem(BACKUP_KEY + '_2', backup2);
-      if (backup3) localStorage.setItem(BACKUP_KEY + '_3', backup3);
-      localStorage.setItem(BACKUP_KEY, JSON.stringify(backupData));
-      
-      setEstadoGuardado('guardado');
-      
-      // Mostrar estado guardado por 1.5 segundos
-      setTimeout(() => {
-        setEstadoGuardado('idle');
-      }, 1500);
-      
-    } catch (error) {
-      console.error('Error al guardar datos:', error);
-      setEstadoGuardado('error');
-      setTimeout(() => {
-        setEstadoGuardado('idle');
-      }, 3000);
-    }
-  };
-
-  const cargarDatos = () => {
-    try {
-      const datosGuardados = localStorage.getItem(STORAGE_KEY);
-      if (datosGuardados) {
-        const datos = JSON.parse(datosGuardados);
-        if (datos.pagos && Array.isArray(datos.pagos)) {
-          return datos.pagos;
-        }
-      }
-      
-      // Si falla, intentar cargar backups en orden
-      const backupKeys = [BACKUP_KEY, BACKUP_KEY + '_2', BACKUP_KEY + '_3'];
-      
-      for (const backupKey of backupKeys) {
-        try {
-          const datosBackup = localStorage.getItem(backupKey);
-          if (datosBackup) {
-            const backup = JSON.parse(datosBackup);
-            if (backup.pagos && Array.isArray(backup.pagos)) {
-              console.log(`Datos recuperados desde backup: ${backupKey}`);
-              return backup.pagos;
-            }
-          }
-        } catch (backupError) {
-          console.warn(`Error en backup ${backupKey}:`, backupError);
-        }
-      }
-      
-      return [];
-    } catch (error) {
-      console.error('Error al cargar datos:', error);
-      return [];
-    }
-  };
-
-  // Cargar datos al inicializar
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setMostrarSplash(false);
-    }, 2500);
-
-    // Cargar datos guardados automáticamente
-    const pagosGuardados = cargarDatos();
-    if (pagosGuardados.length > 0) {
-      setPagos(pagosGuardados);
-      console.log(`✅ Cargados ${pagosGuardados.length} pagos desde el dispositivo`);
-    }
-
+    const timer = setTimeout(() => setMostrarSplash(false), 500);
     return () => clearTimeout(timer);
   }, []);
 
-  // Guardar datos automáticamente cuando cambien los pagos - SIN molestar al usuario
-  useEffect(() => {
-    // Solo guardar si hay pagos o si ya existían datos anteriormente
-    const datosExistentes = localStorage.getItem(STORAGE_KEY);
-    if (pagos.length > 0 || datosExistentes) {
-      guardarDatos(pagos);
-    }
-  }, [pagos]);
-
   const manejarSubmit = () => {
+    if (blocked) { alert('Primero recuperá una copia válida para no perder los datos originales.'); return; }
+    let normalized;
+    try { normalized = normalizePayment(formulario); } catch (e) { alert(e.message); return; }
     if (!formulario.descripcion || !formulario.monto || !formulario.fechaVencimiento) {
       alert('Por favor completa todos los campos obligatorios');
       return;
@@ -151,16 +53,16 @@ const SistemaPagosArgentina = () => {
     if (editandoPago) {
       setPagos(pagos.map(pago => 
         pago.id === editandoPago.id 
-          ? { ...formulario, id: editandoPago.id, fechaCreacion: editandoPago.fechaCreacion }
+          ? { ...normalized, id: editandoPago.id, fechaCreacion: editandoPago.fechaCreacion }
           : pago
       ));
       setEditandoPago(null);
     } else {
       const nuevoPago = {
-        ...formulario,
-        id: Date.now(),
+        ...normalized,
+        id: crypto.randomUUID(),
         fechaCreacion: new Date().toISOString().split('T')[0],
-        monto: parseFloat(formulario.monto)
+        monto: normalized.monto
       };
       setPagos([...pagos, nuevoPago]);
     }
@@ -195,6 +97,21 @@ const SistemaPagosArgentina = () => {
     ));
   };
 
+  const exportarCopia = () => {
+    const content = blocked ? localStorage.getItem(STORAGE_KEY) || '' : backupText(pagos);
+    const url = URL.createObjectURL(new Blob([content], {type:'application/json'}));
+    const link = document.createElement('a'); link.href=url; link.download='cuentas-claras-backup.json'; link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+  const importarCopia = async event => {
+    const file=event.target.files?.[0]; event.target.value=''; if(!file) return;
+    try {
+      if(file.size > 5 * 1024 * 1024) throw new Error('La copia supera 5 MB.');
+      const payments=parseBackup(await file.text());
+      if(window.confirm('¿Reemplazar los pagos actuales por esta copia? Exportá primero tus datos si querés conservarlos.')) restore(payments);
+    } catch(e) { alert(e.message); }
+  };
+
   const obtenerColorCategoria = (categoriaId) => {
     return categorias.find(cat => cat.id === categoriaId)?.color || 'bg-gradient-to-r from-gray-100 to-gray-200 text-gray-900 border-gray-300';
   };
@@ -219,13 +136,20 @@ const SistemaPagosArgentina = () => {
     .filter(pago => !pago.pagado)
     .filter(pago => {
       const hoy = new Date();
-      const vencimiento = new Date(pago.fechaVencimiento);
+      hoy.setHours(0, 0, 0, 0);
+      const vencimiento = new Date(pago.fechaVencimiento + 'T00:00:00');
       const diasDiferencia = (vencimiento - hoy) / (1000 * 60 * 60 * 24);
       return diasDiferencia <= 7 && diasDiferencia >= 0;
     });
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-900 via-violet-900 to-fuchsia-900">
+      <div className="p-4 text-white flex flex-wrap gap-4 items-center">
+        <button onClick={exportarCopia} className="border rounded px-3 py-2">Exportar copia</button>
+        <label className="border rounded px-3 py-2 cursor-pointer">Restaurar copia<input type="file" accept="application/json,.json" className="sr-only" onChange={importarCopia} /></label>
+        <span>Los datos quedan en este navegador. Exportá una copia para conservarlos fuera del dispositivo.</span>
+        {storageError && <p role="alert">{storageError}</p>}
+      </div>
       {/* Pantalla de Splash */}
       {mostrarSplash && (
         <div className="fixed inset-0 bg-gradient-to-br from-purple-900 via-violet-900 to-fuchsia-900 flex items-center justify-center z-50">
@@ -283,7 +207,7 @@ const SistemaPagosArgentina = () => {
         </div>
       )}
 
-      <style jsx>{`
+      <style>{`
         @keyframes fade-in {
           from { opacity: 0; transform: translateY(20px); }
           to { opacity: 1; transform: translateY(0); }
