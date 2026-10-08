@@ -1,12 +1,39 @@
-# React + Vite
+# Cuentas Claras
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Organizador local de pagos, estados y vencimientos, con categorías, filtros y resumen de pendientes.
 
-Currently, two official plugins are available:
+## Tecnologías
+React 19, Vite, Tailwind CSS, Lucide y localStorage. Incluye un proyecto Android con Capacitor; no se afirma que exista un APK distribuido o verificado.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## Instalación
+Node.js 22 y npm.
 
-## Expanding the ESLint configuration
+```sh
+npm install
+npm test
+npm run dev
+npm run build
+```
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## Guardado y recuperación
+Los pagos se cargan antes de iniciar el guardado. Se validan monto, fecha y formato tanto en creación como en edición. Si la copia principal está corrupta, se intentan las copias locales; si ninguna es legible, se bloquea el guardado para preservar los originales.
+
+**Exportar copia** descarga un JSON. **Restaurar copia** valida el archivo y pide confirmar el reemplazo. Antes de restaurar, exportar los datos actuales. Las copias rotativas quedan en el mismo navegador y no reemplazan un archivo guardado fuera del dispositivo.
+
+## Estructura
+`src/lib/payments.js`: validación, lectura, escritura y copias. `src/hooks/usePayments.js`: estado y guardado. `src/App.jsx`: interfaz. La interfaz todavía requiere dividir formulario, listados y resúmenes en componentes más pequeños.
+
+## Límites
+No hay sincronización entre dispositivos ni procesamiento de pagos bancarios. Los vencimientos se muestran en la interfaz; no se verificaron notificaciones fuera de la aplicación. Limpiar el almacenamiento del navegador elimina también las copias locales.
+
+## Soporte
+Si el navegador no permite guardar o está lleno, exportar inmediatamente los pagos. Ante datos corruptos, conservar una copia del original y restaurar un JSON válido.
+
+## Presentación profesional
+Proyecto personal o académico de Matías Romero. El código y la documentación describen su alcance; no se atribuyen clientes, métricas ni experiencia de producción no verificados.
+
+## Comprobaciones
+El workflow de GitHub Actions instala dependencias y compila el proyecto. El resultado del workflow, y no la existencia de este apartado, determina si la verificación pasó.
+
+## Datos para demostraciones
+Usar datos ficticios. No subir bases de datos, contraseñas, claves de servicio ni exportaciones con datos personales.
